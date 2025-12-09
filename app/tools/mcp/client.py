@@ -46,6 +46,52 @@ class MCPClient:
             print(f"MCP list_tools error: {e}")
             return []
 
+    async def get_tool_prompt(self) -> str:
+        """
+        Returns a detailed schema of all available tools with their parameters.
+
+        Format:
+        ### tool_name
+        Description: ...
+        Allowed Parameters:
+          - param_1 (REQUIRED): description
+          - param_2: description
+
+        Returns:
+            Formatted string with full tool schemas for LLM parameter awareness.
+        """
+        response = await self.list_tools()
+        tools = response.get("tools", []) if isinstance(response, dict) else []
+
+        if not tools:
+            return "No tools available."
+
+        prompt_lines = ["AVAILABLE TOOLS AND PARAMETERS:"]
+
+        for tool in tools:
+            name = tool.get("name")
+            desc = tool.get("description", "No description")
+            prompt_lines.append(f"\n### {name}")
+            prompt_lines.append(f"Description: {desc}")
+
+            # Extract allowed parameters from inputSchema
+            schema = tool.get("inputSchema", {})
+            properties = schema.get("properties", {})
+            required = schema.get("required", [])
+
+            if properties:
+                prompt_lines.append("Allowed Parameters:")
+                for param, details in properties.items():
+                    param_type = details.get("type", "any")
+                    param_desc = details.get("description", "")
+                    is_req = "(REQUIRED)" if param in required else ""
+                    # Create a clear definition line for the LLM
+                    prompt_lines.append(f"  - {param} [{param_type}] {is_req}: {param_desc}")
+            else:
+                prompt_lines.append("Parameters: None")
+
+        return "\n".join(prompt_lines)
+
     async def execute_tool(
         self, tool_name: str, arguments: Dict[str, Any]
     ) -> Dict[str, Any]:

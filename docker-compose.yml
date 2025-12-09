@@ -38,6 +38,7 @@ services:
       # Pass your real infrastructure keys to the tools
       - MANIFEST_API_KEY=${MANIFEST_API_KEY}
       - MANIFEST_ORG_KEY=${MANIFEST_ORG_KEY}
+      - MANIFEST_ORG_ID=${MANIFEST_ORG_ID}
       - MANIFEST_API_URL=${MANIFEST_API_URL}
       - NEO4J_CONFIG={"uri":"bolt://${NEO4J_HOST}:${NEO4J_BOLT_PORT}","username":"${NEO4J_USER}","password":"${NEO4J_PASSWORD}"}
       - VICTORIA_METRICS_SELECT_URL=${VICTORIA_METRICS_SELECT_URL}

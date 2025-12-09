@@ -21,6 +21,7 @@ module.exports = {
     MANIFEST_API_URL: process.env.MANIFEST_API_URL,
     MANIFEST_API_KEY: process.env.MANIFEST_API_KEY,
     MANIFEST_ORG_KEY: process.env.MANIFEST_ORG_KEY,
+    MANIFEST_ORG_ID: process.env.MANIFEST_ORG_ID,
 
     // Neo4j Configuration
     NEO4J_CONFIG: neo4jConfig,

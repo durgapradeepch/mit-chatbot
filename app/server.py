@@ -30,6 +30,14 @@ class ChatInput(BaseModel):
     messages: List[Dict[str, Any]] = Field(
         default_factory=list, description="Chat history (optional)"
     )
+    # Corrective RAG fields (with defaults for initial requests)
+    retry_count: int = Field(default=0, description="Query retry counter")
+    data_quality: str = Field(default="good", description="Data quality assessment")
+    # Iterative investigation fields
+    investigation_depth: int = Field(default=0, description="Current investigation depth")
+    all_tool_results: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="Accumulated results from all investigation steps"
+    )
 
 
 class ChatOutput(BaseModel):
@@ -40,6 +48,12 @@ class ChatOutput(BaseModel):
     tool_results: Optional[List[Dict[str, Any]]] = Field(
         default=None, description="Results from tool executions (if any)"
     )
+    all_tool_results: Optional[List[Dict[str, Any]]] = Field(
+        default=None, description="All accumulated investigation results"
+    )
+    retry_count: int = Field(default=0, description="Number of query rewrites performed")
+    data_quality: str = Field(default="good", description="Final data quality assessment")
+    investigation_depth: int = Field(default=0, description="Final investigation depth")
 
 
 app = FastAPI(
