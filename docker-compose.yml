@@ -1,0 +1,53 @@
+services:
+  # 1. The Brain (Python LangGraph Agent)
+  agent-backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # OpenAI & LangChain
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT}
+      # MCP Server (Tools Service)
+      - MCP_SERVER_URL=http://tools-service:3001
+      # Neo4j
+      - NEO4J_HOST=${NEO4J_HOST}
+      - NEO4J_PORT=${NEO4J_BOLT_PORT}
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      # Victoria Metrics & Logs
+      - VICTORIA_METRICS_URL=${VICTORIA_METRICS_SELECT_URL}
+      - VICTORIA_LOGS_API_URL=${VICTORIA_LOGS_API_URL}
+      # Manifest API
+      - MANIFEST_API_URL=${MANIFEST_API_URL}
+      - MANIFEST_API_KEY=${MANIFEST_API_KEY}
+    depends_on:
+      - tools-service
+    volumes:
+      - ./app:/app/app # Live reload for development
+
+  # 2. The Limbs (Node.js Tools Service)
+  tools-service:
+    build: ./tools-service
+    ports:
+      - "3001:3001"
+    environment:
+      - SERVER_PORT=3001
+      # Pass your real infrastructure keys to the tools
+      - MANIFEST_API_KEY=${MANIFEST_API_KEY}
+      - MANIFEST_ORG_KEY=${MANIFEST_ORG_KEY}
+      - MANIFEST_API_URL=${MANIFEST_API_URL}
+      - NEO4J_CONFIG={"uri":"bolt://${NEO4J_HOST}:${NEO4J_BOLT_PORT}","username":"${NEO4J_USER}","password":"${NEO4J_PASSWORD}"}
+      - VICTORIA_METRICS_SELECT_URL=${VICTORIA_METRICS_SELECT_URL}
+      - VICTORIA_LOGS_URL=${VICTORIA_LOGS_API_URL}
+
+  # 3. (Optional) Local Neo4j Database
+  neo4j:
+    image: neo4j:5.15.0
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
