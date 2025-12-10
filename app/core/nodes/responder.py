@@ -45,10 +45,11 @@ Be precise and data-driven. Do not make up information not present in the tool r
 
 async def respond_node(state: AgentState) -> Dict[str, Any]:
     """
-    Generate the final response based on route and available data.
+    Generate the final response based on available data.
 
-    Constructs appropriate prompts based on simple_chat vs enhanced_analysis,
-    and synthesizes a response using the responder LLM.
+    IMPORTANT: If we have tool results (regardless of route), use the
+    ENHANCED_ANALYSIS_PROMPT to provide a data-driven response.
+    Only use SIMPLE_CHAT for pure conversational queries with no tool data.
 
     Args:
         state: Current agent state containing route, tool_results, and user_query.
@@ -58,16 +59,23 @@ async def respond_node(state: AgentState) -> Dict[str, Any]:
     """
     user_query = state["user_query"]
     route = state.get("route", "simple_chat")
-    tool_results = state.get("tool_results", [])
+    tool_results = state.get("tool_results") or []
+    all_tool_results = state.get("all_tool_results") or []
     messages_history = state.get("messages", [])
 
-    # Construct system prompt based on route
-    if route == "enhanced_analysis" and tool_results:
-        # Format tool results for the prompt
-        formatted_results = json.dumps(tool_results, indent=2, default=str)
+    # Determine which results to use (prefer accumulated results)
+    results_to_use = all_tool_results if all_tool_results else tool_results
+
+    # KEY FIX: Use enhanced prompt if we have ANY tool results,
+    # regardless of what the route says. The route just tells us
+    # if the analyzer thinks we're "done" investigating.
+    if results_to_use:
+        formatted_results = json.dumps(results_to_use, indent=2, default=str)
         system_prompt = ENHANCED_ANALYSIS_PROMPT.format(tool_results=formatted_results)
+        print(f"[Responder] Using ENHANCED prompt with {len(results_to_use)} tool results")
     else:
         system_prompt = SIMPLE_CHAT_PROMPT
+        print(f"[Responder] Using SIMPLE prompt (no tool data)")
 
     # Build message list
     messages = [
@@ -83,7 +91,11 @@ async def respond_node(state: AgentState) -> Dict[str, Any]:
     # Create AI message for history
     ai_message = AIMessage(content=response.content)
 
+    # Return all required fields with proper defaults (never None for lists)
     return {
         "final_response": response.content,
         "messages": [HumanMessage(content=user_query), ai_message],
+        # Ensure tool_results and all_tool_results are always lists (not None)
+        "tool_results": tool_results if tool_results else [],
+        "all_tool_results": all_tool_results if all_tool_results else [],
     }
