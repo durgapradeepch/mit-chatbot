@@ -8,7 +8,7 @@ All external URLs, credentials, and model configurations are centralized here.
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import HttpUrl, SecretStr, model_validator
+from pydantic import HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,19 +30,12 @@ class Settings(BaseSettings):
     # OpenAI Configuration
     OPENAI_API_KEY: SecretStr
 
-    # Neo4j Configuration
-    NEO4J_HOST: str = "localhost"
-    NEO4J_PORT: int = 7687
-    NEO4J_URI: str = ""
-    NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: SecretStr
-
     # MCP Server Configuration
     MCP_SERVER_URL: HttpUrl = "http://localhost:3001"
 
     # VictoriaMetrics & VictoriaLogs Configuration
-    VICTORIA_METRICS_URL: HttpUrl
-    VICTORIA_LOGS_API_URL: HttpUrl
+    VICTORIA_METRICS_URL: Optional[HttpUrl] = None
+    VICTORIA_LOGS_API_URL: Optional[HttpUrl] = None
 
     # Manifest API Configuration
     MANIFEST_API_URL: HttpUrl
@@ -55,13 +48,6 @@ class Settings(BaseSettings):
     ROUTER_MODEL: str = "gpt-4o"
     PLANNER_MODEL: str = "gpt-4o"
     RESPONDER_MODEL: str = "gpt-4o"
-
-    @model_validator(mode="after")
-    def construct_neo4j_uri(self) -> "Settings":
-        """Construct Neo4j URI from HOST/PORT if not explicitly provided."""
-        if not self.NEO4J_URI:
-            self.NEO4J_URI = f"bolt://{self.NEO4J_HOST}:{self.NEO4J_PORT}"
-        return self
 
 
 @lru_cache

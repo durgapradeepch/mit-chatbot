@@ -1,13 +1,13 @@
 {
   "name": "mcp-tools-service",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "description": "MCP Tools Microservice - AI Agent's interface to Manifest API and VictoriaMetrics",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "axios": "^1.6.0",
-    "express": "^4.18.0",
-    "neo4j-driver": "^5.14.0"
+    "express": "^4.18.0"
   }
 }

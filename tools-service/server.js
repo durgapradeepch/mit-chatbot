@@ -5,37 +5,18 @@
  * Connects to:
  * - Manifest API (Resources, Incidents, Tickets, Graph)
  * - VictoriaMetrics & VictoriaLogs (Observability)
- * - Neo4j (Direct Graph Access)
  */
 
 const express = require('express');
 const axios = require('axios');
-const neo4j = require('neo4j-driver');
 const config = require('./config');
 
 const app = express();
 const PORT = config.SERVER_PORT || 3001;
 
 // ============================================================================
-// 1. CONFIGURATION & CONNECTIONS
+// 1. CONFIGURATION
 // ============================================================================
-
-// Neo4j Setup
-const NEO4J_CONFIG = config.NEO4J_CONFIG;
-let neo4jDriver = null;
-
-if (NEO4J_CONFIG && NEO4J_CONFIG.uri) {
-    try {
-        neo4jDriver = neo4j.driver(
-            NEO4J_CONFIG.uri,
-            neo4j.auth.basic(NEO4J_CONFIG.username, NEO4J_CONFIG.password),
-            { maxConnectionLifetime: 3 * 60 * 60 * 1000 }
-        );
-        console.log('🔧 Neo4j driver initialized');
-    } catch (error) {
-        console.error('❌ Failed to initialize Neo4j driver:', error.message);
-    }
-}
 
 // Manifest API Setup
 const MANIFEST_API_URL = config.MANIFEST_API_URL;
@@ -45,6 +26,11 @@ const MANIFEST_ORG_KEY = config.MANIFEST_ORG_KEY || 'dev';
 // Victoria Configuration
 const VICTORIA_METRICS_SELECT_URL = config.VICTORIA_METRICS_SELECT_URL;
 const VICTORIA_LOGS_API_URL = config.VICTORIA_LOGS_API_URL || config.VICTORIA_LOGS_URL;
+
+console.log('🔧 Tools Microservice initializing...');
+console.log(`📡 Manifest API: ${MANIFEST_API_URL}`);
+console.log(`📊 Victoria Metrics: ${VICTORIA_METRICS_SELECT_URL}`);
+console.log(`📝 Victoria Logs: ${VICTORIA_LOGS_API_URL}`);
 
 // ============================================================================
 // 2. TOOL DEFINITIONS (Schema) - Optimized for LLM Tool Selection
@@ -68,7 +54,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                rid: { type: "string", required: true, description: "Exact Resource ID (e.g., 'i-0123456789', 'gke-prod-cluster')" }
+                rid: { type: "string", description: "Exact Resource ID (e.g., 'i-0123456789', 'gke-prod-cluster')" }
             },
             required: ["rid"]
         }
@@ -94,8 +80,8 @@ const MCP_TOOLS = {
                 app_id: { type: "string", description: "Filter by associated Application ID" },
                 sortBy: { type: "string", enum: ["updated_at", "provider_key", "watch_level", "resourceType", "resourceName", "resourceId", "resourceStatus", "criticality"], description: "Field to sort results by" },
                 direction: { type: "string", enum: ["asc", "desc"], description: "Sort direction: ascending or descending" },
-                page: { type: "integer", default: 1 },
-                page_size: { type: "integer", default: 20 }
+                page: { type: "integer", default: 1, description: "Page number for pagination" },
+                page_size: { type: "integer", default: 20, description: "Number of items per page" }
             }
         }
     },
@@ -118,7 +104,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                id: { type: "integer", required: true, description: "Numeric Ticket ID (e.g., 1234)" }
+                id: { type: "integer", description: "Numeric Ticket ID (e.g., 1234)" }
             },
             required: ["id"]
         }
@@ -140,8 +126,8 @@ const MCP_TOOLS = {
                 id: { type: "string", description: "Filter by ticket ID substring" },
                 sortBy: { type: "string", enum: ["updated_at", "title", "type", "priority", "status"], description: "Sort field" },
                 direction: { type: "string", enum: ["asc", "desc"], description: "Sort direction" },
-                page: { type: "integer", default: 1 },
-                page_size: { type: "integer", default: 20 }
+                page: { type: "integer", default: 1, description: "Page number" },
+                page_size: { type: "integer", default: 20, description: "Items per page" }
             }
         }
     },
@@ -164,7 +150,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                id: { type: "string", required: true, description: "Incident ID string" }
+                id: { type: "string", description: "Incident ID string" }
             },
             required: ["id"]
         }
@@ -184,8 +170,8 @@ const MCP_TOOLS = {
                 created: { type: "string", description: "Incidents created after this ISO date" },
                 sortBy: { type: "string", enum: ["updated_at", "title", "priority", "status"], description: "Sort field" },
                 direction: { type: "string", enum: ["asc", "desc"], description: "Sort direction" },
-                page: { type: "integer", default: 1 },
-                page_size: { type: "integer", default: 20 }
+                page: { type: "integer", default: 1, description: "Page number" },
+                page_size: { type: "integer", default: 20, description: "Items per page" }
             }
         }
     },
@@ -208,7 +194,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                id: { type: "string", required: true, description: "Changelog ID" }
+                id: { type: "string", description: "Changelog ID" }
             },
             required: ["id"]
         }
@@ -235,8 +221,8 @@ const MCP_TOOLS = {
                 application_id: { type: "integer", description: "Filter by application ID" },
                 sortBy: { type: "string", enum: ["create_date", "provider_key", "severity"], description: "Sort field" },
                 direction: { type: "string", enum: ["asc", "desc"], description: "Sort direction" },
-                page: { type: "integer", default: 1 },
-                page_size: { type: "integer", default: 20 }
+                page: { type: "integer", default: 1, description: "Page number" },
+                page_size: { type: "integer", default: 20, description: "Items per page" }
             }
         }
     },
@@ -254,10 +240,10 @@ const MCP_TOOLS = {
         }
     },
 
-    // --- GRAPH (Topology & Dependencies) ---
+    // --- GRAPH (Topology & Dependencies via Manifest API) ---
     get_graph_nodes: {
         name: "get_graph_nodes",
-        description: "Retrieve topology data showing nodes and their relationships/dependencies. Use to understand service connections, infrastructure maps, or 'what depends on X'. Good for architecture and dependency questions.",
+        description: "Retrieve topology data showing nodes and their relationships/dependencies via Manifest API. Use to understand service connections, infrastructure maps, or 'what depends on X'. Good for architecture and dependency questions.",
         inputSchema: {
             type: "object",
             properties: {
@@ -279,26 +265,15 @@ const MCP_TOOLS = {
     },
     create_graph_link: {
         name: "create_graph_link",
-        description: "Create a relationship/link between two nodes in the graph. Use to establish dependencies or connections between resources.",
+        description: "Create a relationship/link between two nodes in the graph via Manifest API. Use to establish dependencies or connections between resources.",
         inputSchema: {
             type: "object",
             properties: {
-                fromKey: { type: "string", required: true, description: "Source node key" },
-                toKey: { type: "string", required: true, description: "Target node key" },
+                fromKey: { type: "string", description: "Source node key" },
+                toKey: { type: "string", description: "Target node key" },
                 relationship: { type: "string", description: "Relationship type (e.g., 'DEPENDS_ON', 'CONNECTS_TO')" }
             },
             required: ["fromKey", "toKey"]
-        }
-    },
-    execute_graph_cypher: {
-        name: "execute_graph_cypher",
-        description: "Execute a raw Cypher query against the Neo4j graph database. Use ONLY for complex relationship questions that standard tools cannot answer. Requires valid Cypher syntax.",
-        inputSchema: {
-            type: "object",
-            properties: {
-                cypher: { type: "string", required: true, description: "Valid Cypher query string (e.g., 'MATCH (n:Service)-[:DEPENDS_ON]->(m) RETURN n, m')" }
-            },
-            required: ["cypher"]
         }
     },
 
@@ -309,7 +284,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                query: { type: "string", required: true, description: "LogSQL query (e.g., 'error AND service:cart', 'level:error', 'OutOfMemoryError')" },
+                query: { type: "string", description: "LogSQL query (e.g., 'error AND service:cart', 'level:error', 'OutOfMemoryError')" },
                 limit: { type: "integer", default: 1000, description: "Maximum number of log entries to return" }
             },
             required: ["query"]
@@ -321,7 +296,7 @@ const MCP_TOOLS = {
         inputSchema: {
             type: "object",
             properties: {
-                query: { type: "string", required: true, description: "PromQL query (e.g., 'sum(rate(http_requests_total[5m]))', 'container_cpu_usage_seconds_total')" },
+                query: { type: "string", description: "PromQL query (e.g., 'sum(rate(http_requests_total[5m]))', 'container_cpu_usage_seconds_total')" },
                 start: { type: "string", description: "Start timestamp (ISO format or relative like '-1h')" },
                 end: { type: "string", description: "End timestamp (ISO format or 'now')" },
                 step: { type: "string", description: "Query resolution step interval (e.g., '1m', '5m', '1h')" }
@@ -346,7 +321,6 @@ class MCPToolRegistry {
         this.tools.set('get_resources', this.callManifestGet.bind(this, '/client/resource'));
         this.tools.set('get_resource_by_id', (params) => this.callManifestGet(`/client/resource/${params.rid}`, {}));
         this.tools.set('search_resources', this.callManifestGet.bind(this, '/client/resource/search'));
-        // Helper wrappers for specific resource metadata (if needed)
         this.tools.set('get_resource_version', (params) => this.callManifestGet(`/client/resource/${params.resource_id}/version`, {}));
         this.tools.set('get_resource_metadata', (params) => this.callManifestGet(`/client/resource/${params.resource_id}/metadata`, {}));
         this.tools.set('get_resource_tickets', (params) => this.callManifestGet(`/client/resource/${params.resource_id}/ticket`, {}));
@@ -376,10 +350,9 @@ class MCPToolRegistry {
         this.tools.set('get_notification_rule', (params) => this.callManifestGet(`/client/notification/rule/${params.ruleId}`, {}));
         this.tools.set('get_notifications_by_resource', (params) => this.callManifestGet(`/client/notification/resource/${params.rid}`, {}));
 
-        // --- Graph Tools ---
+        // --- Graph Tools (via Manifest API) ---
         this.tools.set('get_graph_nodes', this.callManifestGet.bind(this, '/client/graph'));
         this.tools.set('create_graph_link', (params) => this.callManifestPost('/client/graph', params));
-        this.tools.set('execute_graph_cypher', this.executeNeo4jCypher.bind(this));
 
         // --- Observability Tools ---
         this.tools.set('query_logs', this.queryLogs.bind(this));
@@ -398,31 +371,27 @@ class MCPToolRegistry {
         return await this.tools.get(toolName)(parameters);
     }
 
-    // --- GENERIC API HELPERS ---
+    // --- MANIFEST API HELPERS ---
 
     async callManifestGet(endpoint, params) {
         try {
-            // STRICT HEADER DEFINITION
-            // We define this explicitly to prevent lowercase normalization issues with WAF
             const headers = {
                 'Mit-Api-Key': MANIFEST_API_KEY,
                 'Mit-Org-Key': MANIFEST_ORG_KEY,
                 'Accept': 'application/json'
             };
 
-            // If we have an Org ID, add it too (per WAF requirements)
             if (config.MANIFEST_ORG_ID) {
                 headers['Mit-Org-ID'] = config.MANIFEST_ORG_ID;
             }
 
             console.log(`📡 GET ${MANIFEST_API_URL}${endpoint}`);
-            console.log(`🔑 Headers:`, JSON.stringify(headers)); // Debug: verify casing is preserved
 
             const response = await axios.get(`${MANIFEST_API_URL}${endpoint}`, {
                 headers: headers,
                 params: params,
                 timeout: 30000,
-                validateStatus: (status) => status < 500 // Don't throw for 4xx, only 5xx
+                validateStatus: (status) => status < 500
             });
             return response.data;
         } catch (error) {
@@ -452,7 +421,6 @@ class MCPToolRegistry {
             }
 
             console.log(`📡 POST ${MANIFEST_API_URL}${endpoint}`);
-            console.log(`🔑 Headers:`, JSON.stringify(headers));
 
             const response = await axios.post(`${MANIFEST_API_URL}${endpoint}`, body, {
                 headers: headers,
@@ -470,42 +438,6 @@ class MCPToolRegistry {
                 error: error.response?.data?.message || error.message,
                 status: error.response?.status
             };
-        }
-    }
-
-    // --- NEO4J DIRECT QUERY ---
-
-    async executeNeo4jCypher(params) {
-        const { cypher } = params;
-        if (!neo4jDriver) {
-            return { success: false, error: 'Neo4j driver not initialized' };
-        }
-        const session = neo4jDriver.session();
-        try {
-            console.log(`🔷 Neo4j Cypher:`, cypher);
-            const result = await session.run(cypher);
-            const records = result.records.map(record => {
-                const obj = {};
-                record.keys.forEach(key => {
-                    const value = record.get(key);
-                    // Handle Neo4j Integer type
-                    if (neo4j.isInt(value)) {
-                        obj[key] = value.toNumber();
-                    } else if (value && typeof value === 'object' && value.properties) {
-                        // Handle Node/Relationship objects
-                        obj[key] = { ...value.properties, _labels: value.labels };
-                    } else {
-                        obj[key] = value;
-                    }
-                });
-                return obj;
-            });
-            return { success: true, data: records, count: records.length };
-        } catch (error) {
-            console.error(`❌ Neo4j Error:`, error.message);
-            return { success: false, error: error.message };
-        } finally {
-            await session.close();
         }
     }
 
@@ -571,10 +503,17 @@ app.post('/api/mcp/execute', async (req, res) => {
 
 // Health Check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'healthy', version: '2.0.0', service: 'Tools Sidecar' });
+    res.json({ status: 'healthy', version: '2.1.0', service: 'Tools Microservice' });
 });
+
+// ============================================================================
+// 5. START SERVER
+// ============================================================================
 
 app.listen(PORT, () => {
     console.log(`🚀 Tools Microservice running on port ${PORT}`);
-    console.log(`🔗 Manifest API Target: ${MANIFEST_API_URL}`);
+    console.log(`🔗 Manifest API: ${MANIFEST_API_URL}`);
+    console.log(`📊 Victoria Metrics: ${VICTORIA_METRICS_SELECT_URL}`);
+    console.log(`📝 Victoria Logs: ${VICTORIA_LOGS_API_URL}`);
+    console.log(`\n📋 Available tools: ${Object.keys(MCP_TOOLS).length}`);
 });

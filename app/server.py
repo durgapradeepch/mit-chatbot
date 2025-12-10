@@ -7,7 +7,7 @@ Uses LangServe to expose standard production endpoints:
 - /agent/stream_events
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import uvicorn
 from fastapi import FastAPI
@@ -21,6 +21,8 @@ from app.core.graph import graph
 # ============================================================
 # Input/Output Schemas for LangServe (fixes playground error)
 # ============================================================
+# NOTE: We avoid Optional[...] = None because LangServe Playground
+# cannot handle {"type": "null"} in JSON schema. Use empty defaults instead.
 
 
 class ChatInput(BaseModel):
@@ -35,8 +37,8 @@ class ChatInput(BaseModel):
     data_quality: str = Field(default="good", description="Data quality assessment")
     # Iterative investigation fields
     investigation_depth: int = Field(default=0, description="Current investigation depth")
-    all_tool_results: Optional[List[Dict[str, Any]]] = Field(
-        default=None, description="Accumulated results from all investigation steps"
+    all_tool_results: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Accumulated results from all investigation steps"
     )
 
 
@@ -45,11 +47,11 @@ class ChatOutput(BaseModel):
 
     final_response: str = Field(description="The agent's response")
     route: str = Field(description="The route taken (simple_chat or enhanced_analysis)")
-    tool_results: Optional[List[Dict[str, Any]]] = Field(
-        default=None, description="Results from tool executions (if any)"
+    tool_results: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Results from tool executions (if any)"
     )
-    all_tool_results: Optional[List[Dict[str, Any]]] = Field(
-        default=None, description="All accumulated investigation results"
+    all_tool_results: List[Dict[str, Any]] = Field(
+        default_factory=list, description="All accumulated investigation results"
     )
     retry_count: int = Field(default=0, description="Number of query rewrites performed")
     data_quality: str = Field(default="good", description="Final data quality assessment")
